@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>우리집 장보기</title>
+<style>
+  :root {
+    --bg: #F7F5EC;
+    --card: #FFFFFF;
+    --green: #4C8B3F;
+    --green-soft: #E6F0E1;
+    --text: #2B2F27;
+    --muted: #8A8F84;
+    --line: #ECEAE0;
+    --danger: #C0533F;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { margin: 0 0 20px; font-size: 28px; color: var(--green); }
+
+  .add {
+    display: flex; gap: 8px; flex-wrap: wrap;
+    background: var(--card); padding: 12px; border-radius: 16px;
+    box-shadow: 0 2px 8px rgba(60, 70, 40, .08);
+    margin-bottom: 24px;
+  }
+  .add input, .add select, .add button {
+    font: inherit; font-size: 16px; border-radius: 10px; padding: 10px 12px;
+    border: 1px solid var(--line);
+  }
+  .add input { flex: 1 1 200px; min-width: 0; }
+  .add input:focus, .add select:focus { outline: 2px solid var(--green); outline-offset: -1px; }
+  .add select { background: #fff; }
+  .add button {
+    background: var(--green); color: #fff; border: none; font-weight: 600; cursor: pointer;
+  }
+  .add button:hover { filter: brightness(1.08); }
+
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--card); border-radius: 18px; padding: 16px 16px 8px;
+    box-shadow: 0 2px 8px rgba(60, 70, 40, .08);
+  }
+  .card h2 {
+    display: flex; align-items: center; justify-content: space-between;
+    margin: 0 0 8px; font-size: 18px;
+  }
+  .count {
+    font-size: 13px; font-weight: 500; color: var(--green);
+    background: var(--green-soft); padding: 2px 10px; border-radius: 999px;
+  }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 4px; border-top: 1px solid var(--line);
+  }
+  li:first-child { border-top: none; }
+  li label { display: flex; align-items: center; gap: 12px; flex: 1; cursor: pointer; min-width: 0; }
+  li input[type="checkbox"] {
+    appearance: none; flex: none; width: 24px; height: 24px; margin: 0;
+    border: 2px solid var(--green); border-radius: 7px; cursor: pointer;
+    display: grid; place-content: center; background: #fff;
+  }
+  li input[type="checkbox"]::after {
+    content: ""; width: 6px; height: 12px; margin-top: -3px;
+    border: solid #fff; border-width: 0 3px 3px 0; transform: rotate(45deg); opacity: 0;
+  }
+  li input[type="checkbox"]:checked { background: var(--green); }
+  li input[type="checkbox"]:checked::after { opacity: 1; }
+  li .name { overflow-wrap: anywhere; }
+  li.done .name { text-decoration: line-through; color: var(--muted); }
+  .del {
+    flex: none; border: none; background: none; cursor: pointer;
+    color: var(--muted); font-size: 20px; line-height: 1; padding: 4px 8px; border-radius: 8px;
+    opacity: 0;
+  }
+  li:hover .del, .del:focus { opacity: 1; }
+  .del:hover { color: var(--danger); background: #F8E9E5; }
+  @media (hover: none) { .del { opacity: 1; } }
+  .empty { color: var(--muted); font-size: 14px; padding: 10px 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🥬 우리집 장보기</h1>
+
+  <form class="add" id="addForm">
+    <input id="nameInput" type="text" placeholder="살 것을 적어 주세요 (예: 양배추)" autocomplete="off">
+    <select id="catSelect"></select>
+    <button type="submit">추가</button>
+  </form>
+
+  <div class="grid" id="grid"></div>
+</div>
+
+<script>
+  const STORAGE_KEY = "shopping-list-v1";
+
+  const CATEGORIES = [
+    { id: "veg",   label: "🥕 채소·과일" },
+    { id: "meat",  label: "🥩 고기·생선" },
+    { id: "dairy", label: "🥛 유제품·달걀" },
+    { id: "home",  label: "🧻 생활용품" },
+  ];
+
+  const DEFAULT_ITEMS = {
+    veg:   ["대파", "양파", "사과", "감자"],
+    meat:  ["돼지고기", "닭가슴살", "고등어"],
+    dairy: ["우유", "계란", "두부", "요거트"],
+    home:  ["휴지", "주방세제", "쓰레기봉투"],
+  };
+
+  const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
+  function defaultItems() {
+    const items = [];
+    for (const cat of CATEGORIES) {
+      for (const name of DEFAULT_ITEMS[cat.id]) {
+        items.push({ id: newId(), name, cat: cat.id, done: false });
+      }
+    }
+    return items;
+  }
+
+  function load() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+      if (Array.isArray(saved)) return saved;
+    } catch (e) {}
+    return defaultItems();
+  }
+
+  function save() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); } catch (e) {}
+  }
+
+  let items = load();
+  save();
+
+  const grid = document.getElementById("grid");
+  const catSelect = document.getElementById("catSelect");
+  const nameInput = document.getElementById("nameInput");
+
+  for (const cat of CATEGORIES) {
+    const opt = document.createElement("option");
+    opt.value = cat.id;
+    opt.textContent = cat.label;
+    catSelect.appendChild(opt);
+  }
+
+  function render() {
+    grid.innerHTML = "";
+    for (const cat of CATEGORIES) {
+      // 안 산 것 먼저, 산 것은 아래로 (같은 그룹 안에서는 넣은 순서 유지)
+      const list = items.filter(i => i.cat === cat.id);
+      const sorted = [...list.filter(i => !i.done), ...list.filter(i => i.done)];
+      const left = list.filter(i => !i.done).length;
+
+      const card = document.createElement("section");
+      card.className = "card";
+      card.innerHTML = `<h2><span></span><span class="count"></span></h2><ul></ul>`;
+      card.querySelector("h2 span").textContent = cat.label;
+      card.querySelector(".count").textContent = `남은 것 ${left}개`;
+      const ul = card.querySelector("ul");
+
+      if (sorted.length === 0) {
+        const p = document.createElement("li");
+        p.className = "empty";
+        p.textContent = "아직 항목이 없어요";
+        ul.appendChild(p);
+      }
+
+      for (const item of sorted) {
+        const li = document.createElement("li");
+        if (item.done) li.classList.add("done");
+
+        const label = document.createElement("label");
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.checked = item.done;
+        box.addEventListener("change", () => {
+          item.done = box.checked;
+          save();
+          render();
+        });
+        const name = document.createElement("span");
+        name.className = "name";
+        name.textContent = item.name;
+        label.append(box, name);
+
+        const del = document.createElement("button");
+        del.className = "del";
+        del.type = "button";
+        del.title = "삭제";
+        del.setAttribute("aria-label", `${item.name} 삭제`);
+        del.textContent = "×";
+        del.addEventListener("click", () => {
+          items = items.filter(i => i.id !== item.id);
+          save();
+          render();
+        });
+
+        li.append(label, del);
+        ul.appendChild(li);
+      }
+      grid.appendChild(card);
+    }
+  }
+
+  document.getElementById("addForm").addEventListener("submit", e => {
+    e.preventDefault();
+    const name = nameInput.value.trim();
+    if (!name) { nameInput.focus(); return; }
+    items.push({ id: newId(), name, cat: catSelect.value, done: false });
+    save();
+    render();
+    nameInput.value = "";
+    nameInput.focus();
+  });
+
+  render();
+</script>
+</body>
+</html>
